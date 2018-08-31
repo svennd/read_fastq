@@ -3,6 +3,7 @@
 #include <float.h>
 #include <dirent.h>
 #include <string.h>
+#include <math.h>
 #include "kseq.h"
 
 // reference: http://lh3lh3.users.sourceforge.net/parsefastq.shtml
@@ -25,22 +26,24 @@ int main(int argc, char *argv[])
     gzFile fp;
     kseq_t *seq;
     int l;
-    
+
     struct dirent *pDirent;
     DIR *pDir;
-    
+
     int parsed_files = 0;
+	int total_files = 0;
     unsigned long int max_size = 0;
     unsigned long int reads = 0;
     unsigned long int yield = 0;
     unsigned int min_size = 65535;
     char fastq[] = ".fastq";
-    
+    char gz[] = ".gz";
+
     if (argc == 1) {
         fprintf(stderr, "Usage: %s <dir>\n", argv[0]);
         return 1;
     }
-    
+
     pDir = opendir(argv[1]);
     if (pDir == NULL) {
         printf ("Cannot open directory '%s'\n", argv[1]);
@@ -49,21 +52,36 @@ int main(int argc, char *argv[])
 
     // change pwd
     chdir(argv[1]);
-    
+
+	// determ amount of valid files first
+	while ((pDirent = readdir(pDir)) != NULL) {
+		// check if its .fastq or .gz
+        if (strcmp(fastq, getExt(pDirent->d_name)) == 0 || strcmp(gz, getExt(pDirent->d_name)) == 0 )
+		{
+			++total_files;
+		}
+	}
+	
+	// show that we are still here
+	printf("found %d valid fastQ files\n", total_files);
+	
+	// reset pointer
+	rewinddir(pDir);
+	
     // reads files
     while ((pDirent = readdir(pDir)) != NULL) {
-        
+
         // check if its .fastq or .gz
-        if (strcmp(fastq, getExt(pDirent->d_name)) == 0)
+        if (strcmp(fastq, getExt(pDirent->d_name)) == 0 || strcmp(gz, getExt(pDirent->d_name)) == 0 )
         {
             // printf("reading file : %s\n", pDirent->d_name);
             fp = gzopen(pDirent->d_name, "r");
-            
+
             seq = kseq_init(fp);
             while ((l = kseq_read(seq)) >= 0)
             {
                 ++reads, yield += seq->seq.l;
-                
+
                 // smallest and largest
                 if (min_size > seq->seq.l) {
                     min_size = seq->seq.l;
@@ -74,15 +92,19 @@ int main(int argc, char *argv[])
             }
             kseq_destroy(seq);
             gzclose(fp);
-            
-            printf("reads:%ld\n", reads);
-            ++parsed_files;
+
+			if (parsed_files % 10 == 0 )
+			{
+				printf("reads:%ld\t(%d/%d)\r", reads, parsed_files, total_files);
+            }
+			++parsed_files;
         }
     }
 
     closedir(pDir);
-    
+
     printf("fastQ files found:%d\nreads:%ld\tbases:%ld\tmax:%ld\tmin:%ld\tavg:%lf\n", parsed_files, reads, yield, max_size, min_size, (float)yield/reads);
-    
+
     return 0;
 }
+
